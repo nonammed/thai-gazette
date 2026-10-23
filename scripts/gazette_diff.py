@@ -12,7 +12,8 @@ Gazette diff — сравнивает скачанные Excel с прошлым
 import sys, os, io, json
 from pathlib import Path
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if __name__ == "__main__":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 GAZETTE_DIR = Path(os.environ.get("GAZETTE_DIR") or (REPO_ROOT / "state"))
@@ -93,6 +94,12 @@ def is_tourist_relevant(title):
             if c.lower() in t:
                 return True
     return False
+
+
+def is_tourist_relevant_page(text, window=600):
+    """Тот же фильтр, но по OCR-тексту страницы: смотрим только «шапку»
+    (заголовок документа), иначе негативы (บริษัท в теле) глушат визовые лоты."""
+    return is_tourist_relevant((text or "")[:window])
 
 
 def main():

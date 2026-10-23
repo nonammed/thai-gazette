@@ -12,7 +12,8 @@ pdftoppm -png -r 400 | tesseract -l tha
 import sys, os, io, subprocess, tempfile
 from pathlib import Path
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if __name__ == "__main__":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 TESSDATA_PREFIX = Path.home() / ".local" / "share" / "tessdata"
 if (TESSDATA_PREFIX / "tha.traineddata").exists():

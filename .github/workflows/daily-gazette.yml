@@ -30,13 +30,10 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Chrome, Xvfb, tesseract (tha), poppler
+      - name: Install tesseract (tha) + poppler
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb poppler-utils tesseract-ocr tesseract-ocr-tha fonts-thai-tlwg
-          wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-          sudo apt-get install -y -qq /tmp/chrome.deb
-          google-chrome --version
+          sudo apt-get install -y -qq poppler-utils tesseract-ocr tesseract-ocr-tha fonts-thai-tlwg
           tesseract --list-langs
 
       - name: Install python deps
@@ -52,9 +49,9 @@ jobs:
         run: |
           set -o pipefail
           if [ "${{ inputs.dry_run }}" = "true" ]; then
-            xvfb-run -a python scripts/run_pipeline.py --dry-run | tee run.log
+            python scripts/run_pipeline.py --dry-run | tee run.log
           else
-            xvfb-run -a python scripts/run_pipeline.py | tee run.log
+            python scripts/run_pipeline.py | tee run.log
           fi
 
       - name: Save post artifact

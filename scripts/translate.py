@@ -12,6 +12,7 @@ import os
 import re
 import json
 import time
+import urllib.error
 import urllib.request
 import urllib.parse
 
@@ -53,14 +54,25 @@ def google_translate(text, src="th", dst="ru"):
         params = urllib.parse.urlencode({
             "client": "gtx", "sl": src, "tl": dst, "dt": "t", "q": part,
         })
-        try:
-            with urllib.request.urlopen(f"{GTX}?{params}", timeout=45) as r:
-                data = json.loads(r.read().decode("utf-8", "replace"))
-            out.append("".join(seg[0] for seg in data[0] if seg and seg[0]))
-        except Exception as e:
-            print(f"  translate(google) error: {e}", flush=True)
+        data = None
+        for attempt in range(4):
+            try:
+                with urllib.request.urlopen(f"{GTX}?{params}", timeout=45) as r:
+                    data = json.loads(r.read().decode("utf-8", "replace"))
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 429 and attempt < 3:
+                    time.sleep(3 * (2 ** attempt))  # 3s, 6s, 12s
+                    continue
+                print(f"  translate(google) error: {e}", flush=True)
+                return ""
+            except Exception as e:
+                print(f"  translate(google) error: {e}", flush=True)
+                return ""
+        if data is None:
             return ""
-        time.sleep(0.4)  # не долбим endpoint
+        out.append("".join(seg[0] for seg in data[0] if seg and seg[0]))
+        time.sleep(0.6)  # не долбим endpoint
     return "".join(out).strip()
 
 
@@ -76,6 +88,8 @@ def deepseek_summary(title_th, body_th):
         "title_ru — краткий перевод названия документа (до 120 символов).\n"
         "summary_ru — 2-5 предложений по-русски: что меняется, сроки, какие страны/категории,"
         " есть ли упоминание России (รัสเซีย). Только факты из текста, без домыслов."
+        " Годы в документах указаны в буддийской эре (พ.ศ.): переводи их в CE (вычти 543)."
+        " Если цифры OCR противоречивы — не приводи их вообще, ограничься сутью."
         " Если текст пустой или нечитаемый — summary_ru = \"текст не извлечён, см. ссылку\".\n\n"
         f"НАЗВАНИЕ: {title_th}\n\nТЕКСТ (OCR, может содержать ошибки распознавания):\n{body}"
     )
@@ -83,7 +97,7 @@ def deepseek_summary(title_th, body_th):
         resp = _post_json(
             DEEPSEEK,
             {
-                "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-chat"),
+                "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-flash"),
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0.2,
                 "response_format": {"type": "json_object"},

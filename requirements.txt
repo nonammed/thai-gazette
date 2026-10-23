@@ -1,2 +1,5 @@
-DrissionPage>=4.1.0.0
+# Основной путь (enum, без браузера):
 openpyxl>=3.1.2
+
+# Для --source excel (Chrome под Xvfb) дополнительно:
+#   pip install DrissionPage>=4.1.0.0
