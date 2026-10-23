@@ -86,7 +86,12 @@ def collect_enum(args):
            "--ahead", str(args.ahead), "--behind", str(args.behind), "--limit", str(args.limit)]
     r = run(cmd, timeout=1800)
     out = (r.stdout or "")
-    for line in out.strip().splitlines()[:-1][-15:]:
+    lines = out.strip().splitlines()[:-1]
+    for line in lines[:4]:
+        log("   " + line)
+    if len(lines) > 14:
+        log(f"   ... ({len(lines) - 14} строк лога сканера опущено)")
+    for line in lines[-10:]:
         log("   " + line)
     try:
         data = json.loads(out.strip().splitlines()[-1])

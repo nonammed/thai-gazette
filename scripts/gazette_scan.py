@@ -20,6 +20,8 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -42,22 +44,60 @@ def log(msg):
     print(msg, flush=True)
 
 
+# Сайт режет всплески запросов (429). Ходим по одному с паузой и бэкоффом.
+_pace_lock = threading.Lock()
+_last_request = [0.0]
+PACE = 0.6  # секунд между запросами ко всему хосту
+
+
+def _pace():
+    with _pace_lock:
+        wait = PACE - (time.time() - _last_request[0])
+        if wait > 0:
+            time.sleep(wait)
+        _last_request[0] = time.time()
+
+
+def _request(url, method="GET", timeout=45):
+    """GET/HEAD с бэкоффом на 429/503."""
+    delay = 8
+    for attempt in range(5):
+        _pace()
+        req = urllib.request.Request(url, method=method, headers={"User-Agent": UA})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.status, (r.read() if method == "GET" else b"")
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 503) and attempt < 4:
+                retry_after = e.headers.get("Retry-After") if e.headers else None
+                try:
+                    pause = int(retry_after) if retry_after else delay
+                except ValueError:
+                    pause = delay
+                log(f"  {e.code} rate-limit, пауза {pause}s (попытка {attempt + 1}/5)")
+                time.sleep(pause)
+                delay = min(delay * 2, 60)
+                continue
+            return e.code, b""
+        except Exception:
+            if attempt < 2:
+                time.sleep(delay)
+                continue
+            return 0, b""
+    return 0, b""
+
+
 def head_ok(doc_id):
     """Есть ли документ (200) — без скачивания тела."""
-    req = urllib.request.Request(BASE % doc_id, method="HEAD", headers={"User-Agent": UA})
-    try:
-        with urllib.request.urlopen(req, timeout=25) as r:
-            return r.status == 200
-    except urllib.error.HTTPError:
-        return False
-    except Exception:
-        return False
+    status, _ = _request(BASE % doc_id, method="HEAD", timeout=25)
+    return status == 200
 
 
 def fetch(doc_id):
-    req = urllib.request.Request(BASE % doc_id, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.read()
+    status, body = _request(BASE % doc_id, timeout=60)
+    if status != 200 or not body:
+        raise RuntimeError(f"HTTP {status}")
+    return body
 
 
 def pdf_date(pdf_path):
@@ -166,7 +206,7 @@ def main():
     ap.add_argument("--ahead", type=int, default=250, help="сколько id впереди проверять")
     ap.add_argument("--behind", type=int, default=120, help="окно назад (поздние публикации)")
     ap.add_argument("--limit", type=int, default=150, help="максимум документов на OCR за прогон")
-    ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--max-age", type=int, default=90, help="публикации старше N дней не берём")
     args = ap.parse_args()
 
