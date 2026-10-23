@@ -1,0 +1,6 @@
+state/*.xlsx
+post.txt
+run.log
+__pycache__/
+*.pyc
+.venv/

@@ -1,0 +1,82 @@
+name: Thai Gazette daily
+
+on:
+  schedule:
+    # 01:00 UTC = 08:00 Asia/Bangkok (+07). GitHub может задержать запуск на 5-40 мин.
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Не публиковать, только напечатать пост"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: thai-gazette
+  cancel-in-progress: false
+
+jobs:
+  gazette:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Chrome, Xvfb, tesseract (tha), poppler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb poppler-utils tesseract-ocr tesseract-ocr-tha fonts-thai-tlwg
+          wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt-get install -y -qq /tmp/chrome.deb
+          google-chrome --version
+          tesseract --list-langs
+
+      - name: Install python deps
+        run: |
+          python -m pip install --upgrade pip -q
+          pip install -q -r requirements.txt
+
+      - name: Run pipeline
+        env:
+          SOCPOST_BOT_TOKEN: ${{ secrets.SOCPOST_BOT_TOKEN }}
+          SOCPOST_CHAT_ID: ${{ secrets.SOCPOST_CHAT_ID }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          set -o pipefail
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            xvfb-run -a python scripts/run_pipeline.py --dry-run | tee run.log
+          else
+            xvfb-run -a python scripts/run_pipeline.py | tee run.log
+          fi
+
+      - name: Save post artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gazette-post
+          path: |
+            post.txt
+            run.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Commit state
+        if: always()
+        run: |
+          git config user.name "gazette-bot"
+          git config user.email "gazette-bot@users.noreply.github.com"
+          git add state/seen_ids.json
+          if git diff --cached --quiet; then
+            echo "state unchanged"
+          else
+            git commit -m "state: update seen ids [skip ci]"
+            git push
+          fi
